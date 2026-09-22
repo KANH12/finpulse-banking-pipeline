@@ -1,0 +1,27 @@
+# Data Manipulation & Fast Analytical Engine
+pandas>=2.0.0
+polars>=0.20.0
+pyarrow>=14.0.0
+duckdb>=0.10.0
+
+# Streaming & Messaging (Redpanda / Kafka compatible)
+kafka-python-ng>=2.2.0
+
+# Data Validation & Data Quality
+pydantic>=2.5.0
+great-expectations>=0.18.0
+
+# Interactive Operations Dashboard
+streamlit>=1.32.0
+plotly>=5.18.0
+
+# Database & Storage
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+
+# Environment & Utilities
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+
+# Testing & Quality Assurance
+pytest>=8.0.0
