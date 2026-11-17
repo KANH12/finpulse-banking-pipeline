@@ -30,6 +30,7 @@ from src.dashboard.queries import (
     load_error_breakdown,
     load_quarantine_records,
     load_risk_summary,
+    load_risk_drivers,
     load_recent_high_risk,
     load_mcc_breakdown,
     load_daily_trend,
@@ -291,6 +292,7 @@ with tab_biz:
     @st.fragment(run_every=60)
     def biz_screen():
         risk_data = load_risk_summary()
+        risk_drivers = load_risk_drivers()
         risk_map  = {r["risk_label"]: r for r in risk_data} if risk_data else {}
 
         def _val(label, field, default=0):
@@ -302,19 +304,33 @@ with tab_biz:
         high      = _val("HIGH_RISK", "count")
         subprime  = _val("SUBPRIME_RISK", "count")
         normal    = _val("NORMAL", "count")
+        review_queue = int(risk_drivers.get("review_queue", critical + high) or 0)
+        review_exposure = float(risk_drivers.get("review_exposure", 0) or 0)
+        review_rate = review_queue / total_txn * 100 if total_txn else 0
 
-        # KPI strip
+        _label("Portfolio Risk Posture")
+        st.caption(
+            "A transaction enters the review queue when credit utilization (CUR) is above 85%. "
+            "It becomes Critical when CUR >85% and FICO is below 620."
+        )
+
+        # KPI strip: each metric answers a decision question for the risk analyst.
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Total Transactions", f"{total_txn:,}")
-        c2.metric("Total Volume",       f"${total_amt:,.0f}" if total_amt else "$0")
-        c3.metric("Critical Risk",  f"{critical:,}",
-                  delta=f"{critical/total_txn*100:.1f}%" if total_txn else None,
-                  delta_color="inverse")
-        c4.metric("High Risk",      f"{high:,}",
-                  delta=f"{high/total_txn*100:.1f}%" if total_txn else None,
-                  delta_color="inverse")
-        c5.metric("Normal",         f"{normal:,}",
-                  delta=f"{normal/total_txn*100:.1f}%" if total_txn else None)
+        c1.metric("Portfolio transactions", f"{total_txn:,}",
+                  help="All transactions that passed data-quality checks and reached Gold.")
+        c2.metric("Needs review", f"{review_queue:,}",
+                  delta=f"{review_rate:.1f}% of portfolio" if total_txn else None,
+                  delta_color="inverse",
+                  help="High Risk and Critical Risk transactions that should be reviewed first.")
+        c3.metric("At-risk exposure", f"${review_exposure:,.0f}",
+                  help="Transaction value represented by the current review queue; this is exposure, not confirmed loss.")
+        c4.metric("Critical queue", f"{critical:,}",
+                  delta="CUR >85% + FICO <620" if critical else None,
+                  delta_color="inverse",
+                  help="Highest-priority cases: highly utilized credit combined with a subprime FICO score.")
+        c5.metric("Normal", f"{normal:,}",
+                  delta=f"{normal / total_txn * 100:.1f}%" if total_txn else None,
+                  help="Transactions with neither high utilization nor a subprime FICO signal.")
 
         # Status banner — plain text, no emoji
         if critical > 0:
@@ -329,12 +345,53 @@ with tab_biz:
         else:
             st.success("No critical or high risk transactions in current dataset.")
 
+        with st.expander("How to interpret the risk signals", expanded=True):
+            guide = pd.DataFrame([
+                {
+                    "Signal": "High credit utilization (CUR)",
+                    "Rule": "CUR > 85%",
+                    "What it reflects": "The card's estimated outstanding balance is close to its credit limit.",
+                    "Analyst action": "Review spending pattern and available credit before approving follow-up activity.",
+                },
+                {
+                    "Signal": "Subprime credit profile",
+                    "Rule": "FICO < 620",
+                    "What it reflects": "A lower creditworthiness indicator; it increases concern but is not a rejection by itself.",
+                    "Analyst action": "Use as a supporting signal alongside utilization and transaction context.",
+                },
+                {
+                    "Signal": "Critical risk",
+                    "Rule": "CUR > 85% AND FICO < 620",
+                    "What it reflects": "Two independent indicators occur together, creating the highest review priority.",
+                    "Analyst action": "Investigate first; validate customer, merchant, and transaction context.",
+                },
+                {
+                    "Signal": "High velocity",
+                    "Rule": "> 3 transactions per card in a micro-batch",
+                    "What it reflects": "Rapid activity that can indicate unusual behavior; shown as context, not a risk label by itself.",
+                    "Analyst action": "Compare with historical customer behavior and merchant pattern.",
+                },
+            ])
+            st.dataframe(guide, width="stretch", hide_index=True, height=210)
+
+        _label("What Is Driving the Review Queue")
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("CUR above 85%", f"{int(risk_drivers.get('high_cur_count', 0) or 0):,}",
+                  help="Transactions with high credit utilization. This is the direct High Risk trigger.")
+        d2.metric("FICO below 620", f"{int(risk_drivers.get('subprime_count', 0) or 0):,}",
+                  help="Transactions linked to a subprime customer profile.")
+        d3.metric("Both signals", f"{int(risk_drivers.get('dual_factor_count', 0) or 0):,}",
+                  help="Dual-factor cases; these form the Critical Risk queue.")
+        d4.metric("Velocity signals", f"{int(risk_drivers.get('velocity_signal_count', 0) or 0):,}",
+                  help="More than three transactions for the same card within one micro-batch. Context for investigation.")
+
         st.divider()
 
         col_l, col_r = st.columns([1, 1.45])
 
         with col_l:
             _label("Risk Segment Distribution")
+            st.caption("Shows where the portfolio sits in the decision rules. A growing High/Critical share means the review workload is increasing.")
             if risk_data:
                 risk_df = pd.DataFrame(risk_data)
                 fig = px.pie(
@@ -362,6 +419,7 @@ with tab_biz:
 
         with col_r:
             _label("Daily Transaction Volume & Risk Count")
+            st.caption("Bars show pipeline volume. The red line shows review-queue arrivals, helping separate higher risk from higher traffic.")
             trend_data = load_daily_trend()
             if trend_data:
                 trend_df = pd.DataFrame(trend_data)
@@ -401,6 +459,7 @@ with tab_biz:
 
         with col_m1:
             _label("MCC Category — Volume & Avg Credit Utilization")
+            st.caption("Prioritize merchant categories with both meaningful spend and warm/red CUR coloring; they concentrate utilization pressure.")
             mcc_data = load_mcc_breakdown()
             if mcc_data:
                 mcc_df = pd.DataFrame(mcc_data).head(15)
@@ -426,7 +485,8 @@ with tab_biz:
                 st.plotly_chart(fig, width="stretch")
 
         with col_m2:
-            _label("High Risk — Recent Transactions")
+            _label("Analyst Review Queue — Latest High/Critical Transactions")
+            st.caption("Start here: transactions are ordered by ingestion time. CUR and Subprime explain why each case was surfaced.")
             hr_records = load_recent_high_risk(limit=50)
             if hr_records:
                 hr_df = pd.DataFrame(hr_records)
@@ -438,7 +498,7 @@ with tab_biz:
 
                 show = [c for c in [
                     "transaction_timestamp", "Amount", "Merchant Name",
-                    "MCC", "risk_label", "CUR", "flag_subprime",
+                    "MCC", "risk_label", "CUR", "flag_subprime", "flag_high_velocity",
                 ] if c in hr_df.columns]
 
                 st.dataframe(
@@ -451,6 +511,7 @@ with tab_biz:
                         "Amount":       st.column_config.TextColumn("Amount",  width="small"),
                         "CUR":          st.column_config.TextColumn("CUR",     width="small"),
                         "flag_subprime": st.column_config.CheckboxColumn("Subprime"),
+                        "flag_high_velocity": st.column_config.CheckboxColumn("High velocity"),
                     },
                 )
                 st.caption(f"{len(hr_df):,} records — latest by ingestion time")

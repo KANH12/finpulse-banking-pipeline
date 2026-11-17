@@ -135,6 +135,32 @@ def load_risk_summary() -> dict:
 
 
 @st.cache_data(ttl=60)
+def load_risk_drivers() -> dict:
+    """Return the signals that explain the current review queue."""
+    con = _get_con()
+    try:
+        return con.execute(f"""
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE risk_label IN ('HIGH_RISK', 'CRITICAL_RISK')
+                ) AS review_queue,
+                COALESCE(SUM(Amount) FILTER (
+                    WHERE risk_label IN ('HIGH_RISK', 'CRITICAL_RISK')
+                ), 0) AS review_exposure,
+                COUNT(*) FILTER (WHERE flag_high_cur) AS high_cur_count,
+                COUNT(*) FILTER (WHERE flag_subprime) AS subprime_count,
+                COUNT(*) FILTER (
+                    WHERE flag_high_cur AND flag_subprime
+                ) AS dual_factor_count,
+                COUNT(*) FILTER (WHERE flag_high_velocity) AS velocity_signal_count
+            FROM read_parquet('{_gold_fact_path()}', hive_partitioning=true)
+        """).fetchdf().iloc[0].to_dict()
+    except Exception:
+        logger.exception("Failed to load risk driver summary")
+        return {}
+
+
+@st.cache_data(ttl=60)
 def load_recent_high_risk(limit: int = 50) -> list[dict]:
     con = _get_con()
     try:
