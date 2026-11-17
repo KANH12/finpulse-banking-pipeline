@@ -39,6 +39,7 @@ def load_pipeline_health() -> dict:
         """).fetchone()[0]
         return {"bronze_total": bronze, "silver_total": silver, "health_score": round(silver / bronze * 100, 1) if bronze else 0}
     except Exception:
+        logger.exception("Failed to load pipeline health metrics")
         return {"bronze_total": 0, "silver_total": 0, "health_score": 0}
 
 
@@ -57,6 +58,7 @@ def load_error_breakdown() -> list[dict]:
         """).fetchdf()
         return result.to_dict(orient="records")
     except Exception:
+        logger.exception("Failed to load quarantine error breakdown")
         return []
 
 
