@@ -1,7 +1,13 @@
+import json
+import logging
+
 import duckdb
 import streamlit as st
 from src.config.settings import get_settings
 from src.config.aws_client import configure_duckdb_s3
+
+
+logger = logging.getLogger(__name__)
 
 
 def _get_con() -> duckdb.DuckDBPyConnection:
@@ -79,33 +85,31 @@ def load_quarantine_records(limit: int = 200, filter_error: str | None = None) -
                 error_code,
                 quarantine_timestamp,
                 source_bronze_key,
-                record
+                to_json(record) AS record_json
             FROM read_json_auto('s3://{settings.s3_bucket}/{settings.s3_prefix_quarantine}**/*.json')
             {where_clause}
             ORDER BY quarantine_timestamp DESC
             LIMIT {limit}
-        """).fetchdf()
+        """).fetchall()
 
         rows = []
-        for _, r in raw.iterrows():
-            rec = r.get("record", {}) or {}
-            if isinstance(rec, str):
-                import json as _json
-                try:
-                    rec = _json.loads(rec)
-                except Exception:
-                    rec = {}
-            error_code = r["error_code"]
+        for error_code, quarantine_timestamp, source_bronze_key, record_json in raw:
+            try:
+                rec = json.loads(record_json) if record_json else {}
+            except (TypeError, json.JSONDecodeError):
+                rec = {}
             row = {
                 "error_code":        error_code,
                 "error_description": ERROR_DESCRIPTIONS.get(error_code, "Unknown error"),
-                "quarantine_time":   r["quarantine_timestamp"],
-                "source_batch":      str(r["source_bronze_key"]).split("/")[-1],
+                "quarantine_time":   quarantine_timestamp,
+                "source_batch":      str(source_bronze_key).split("/")[-1],
             }
-            row.update({k: v for k, v in rec.items()})
+            if isinstance(rec, dict):
+                row.update(rec)
             rows.append(row)
         return rows
     except Exception:
+        logger.exception("Failed to load quarantine records")
         return []
 
 
