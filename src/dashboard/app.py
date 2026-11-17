@@ -83,6 +83,21 @@ button[data-baseweb="tab"] { font-size: 0.82rem; font-weight: 600; letter-spacin
 
 /* Alert banners — strip the left border default streamlit adds */
 div[data-testid="stAlert"] { border-radius: 6px; }
+
+/* Risk-review cards: narrative first, metric second. */
+.insight-card {
+    border: 1px solid rgba(128,128,128,0.18);
+    border-radius: 10px;
+    padding: 16px 18px;
+    min-height: 126px;
+    background: rgba(128,128,128,0.055);
+}
+.insight-card--urgent { border-left: 4px solid #dc2626; }
+.insight-card--clear  { border-left: 4px solid #16a34a; }
+.insight-card--watch  { border-left: 4px solid #d97706; }
+.insight-kicker { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.58; font-weight: 700; }
+.insight-value { font-size: 1.65rem; font-weight: 700; letter-spacing: -0.03em; margin: 4px 0 5px; }
+.insight-copy { font-size: 0.82rem; line-height: 1.45; opacity: 0.78; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -122,6 +137,17 @@ def _layout(**kw) -> dict:
 
 def _label(text: str) -> None:
     st.markdown(f'<div class="label">{text}</div>', unsafe_allow_html=True)
+
+
+def _insight_card(title: str, value: str, copy: str, tone: str = "watch") -> None:
+    """Render a short, scannable operational insight."""
+    st.markdown(
+        f'<div class="insight-card insight-card--{tone}">'
+        f'<div class="insight-kicker">{title}</div>'
+        f'<div class="insight-value">{value}</div>'
+        f'<div class="insight-copy">{copy}</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ── PIPELINE HEALTH ──────────────────────────────────────────────────────────
@@ -308,104 +334,94 @@ with tab_biz:
         review_exposure = float(risk_drivers.get("review_exposure", 0) or 0)
         review_rate = review_queue / total_txn * 100 if total_txn else 0
 
-        _label("Portfolio Risk Posture")
-        st.caption(
-            "A transaction enters the review queue when credit utilization (CUR) is above 85%. "
-            "It becomes Critical when CUR >85% and FICO is below 620."
-        )
+        st.subheader("Risk Review Center", anchor=False)
+        st.caption("Start with the cases that need a human decision. Supporting signals and portfolio context follow below.")
 
-        # KPI strip: each metric answers a decision question for the risk analyst.
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Portfolio transactions", f"{total_txn:,}",
-                  help="All transactions that passed data-quality checks and reached Gold.")
-        c2.metric("Needs review", f"{review_queue:,}",
-                  delta=f"{review_rate:.1f}% of portfolio" if total_txn else None,
-                  delta_color="inverse",
-                  help="High Risk and Critical Risk transactions that should be reviewed first.")
-        c3.metric("At-risk exposure", f"${review_exposure:,.0f}",
-                  help="Transaction value represented by the current review queue; this is exposure, not confirmed loss.")
-        c4.metric("Critical queue", f"{critical:,}",
-                  delta="CUR >85% + FICO <620" if critical else None,
-                  delta_color="inverse",
-                  help="Highest-priority cases: highly utilized credit combined with a subprime FICO score.")
-        c5.metric("Normal", f"{normal:,}",
-                  delta=f"{normal / total_txn * 100:.1f}%" if total_txn else None,
-                  help="Transactions with neither high utilization nor a subprime FICO signal.")
-
-        # Status banner — plain text, no emoji
-        if critical > 0:
-            st.error(
-                f"{critical:,} CRITICAL RISK transactions — CUR >85% combined with Subprime FICO (<620). "
-                f"Immediate review recommended."
+        priority_col, exposure_col, watch_col = st.columns([1.15, 1, 1])
+        with priority_col:
+            if critical > 0:
+                _insight_card(
+                    "Priority now", f"{critical:,} critical cases",
+                    "Review these first: each has high utilization and a subprime credit profile.",
+                    "urgent",
+                )
+            elif review_queue > 0:
+                _insight_card(
+                    "Priority now", f"{review_queue:,} cases to review",
+                    "These transactions exceed the utilization threshold. Start with the newest records below.",
+                    "watch",
+                )
+            else:
+                _insight_card(
+                    "Priority now", "No open review cases",
+                    "No transaction currently meets the High or Critical Risk rule. Continue monitoring the watch signals.",
+                    "clear",
+                )
+        with exposure_col:
+            _insight_card(
+                "Exposure in review", f"${review_exposure:,.0f}",
+                f"{review_rate:.1f}% of {total_txn:,} Gold transactions are in the manual-review queue. This is exposure, not confirmed loss.",
+                "urgent" if review_queue else "clear",
             )
-        elif high > 0:
-            st.warning(
-                f"{high:,} HIGH RISK transactions — credit utilization exceeds 85% threshold."
+        with watch_col:
+            velocity_count = int(risk_drivers.get("velocity_signal_count", 0) or 0)
+            _insight_card(
+                "Watch signal", f"{velocity_count:,} rapid-activity events",
+                "More than three transactions for one card in a micro-batch. Treat this as context for an investigation, not an automatic block.",
+                "watch",
             )
-        else:
-            st.success("No critical or high risk transactions in current dataset.")
 
-        with st.expander("How to interpret the risk signals", expanded=True):
-            guide = pd.DataFrame([
-                {
-                    "Signal": "High credit utilization (CUR)",
-                    "Rule": "CUR > 85%",
-                    "What it reflects": "The card's estimated outstanding balance is close to its credit limit.",
-                    "Analyst action": "Review spending pattern and available credit before approving follow-up activity.",
-                },
-                {
-                    "Signal": "Subprime credit profile",
-                    "Rule": "FICO < 620",
-                    "What it reflects": "A lower creditworthiness indicator; it increases concern but is not a rejection by itself.",
-                    "Analyst action": "Use as a supporting signal alongside utilization and transaction context.",
-                },
-                {
-                    "Signal": "Critical risk",
-                    "Rule": "CUR > 85% AND FICO < 620",
-                    "What it reflects": "Two independent indicators occur together, creating the highest review priority.",
-                    "Analyst action": "Investigate first; validate customer, merchant, and transaction context.",
-                },
-                {
-                    "Signal": "High velocity",
-                    "Rule": "> 3 transactions per card in a micro-batch",
-                    "What it reflects": "Rapid activity that can indicate unusual behavior; shown as context, not a risk label by itself.",
-                    "Analyst action": "Compare with historical customer behavior and merchant pattern.",
-                },
-            ])
-            st.dataframe(guide, width="stretch", hide_index=True, height=210)
+        st.markdown("#### Why people and transactions enter this view")
+        driver_a, driver_b, driver_c, driver_d = st.columns(4)
+        driver_a.metric("High utilization", f"{int(risk_drivers.get('high_cur_count', 0) or 0):,}",
+                        help="CUR above 85%: estimated outstanding balance is close to the credit limit.")
+        driver_b.metric("Subprime profile", f"{int(risk_drivers.get('subprime_count', 0) or 0):,}",
+                        help="FICO below 620. It is a supporting signal, not a rejection by itself.")
+        driver_c.metric("Dual-factor cases", f"{int(risk_drivers.get('dual_factor_count', 0) or 0):,}",
+                        help="High utilization plus subprime FICO. These are Critical Risk cases.")
+        driver_d.metric("Portfolio covered", f"{normal / total_txn * 100:.1f}%" if total_txn else "0%",
+                        help="Share without either high utilization or a subprime FICO signal.")
 
-        _label("What Is Driving the Review Queue")
-        d1, d2, d3, d4 = st.columns(4)
-        d1.metric("CUR above 85%", f"{int(risk_drivers.get('high_cur_count', 0) or 0):,}",
-                  help="Transactions with high credit utilization. This is the direct High Risk trigger.")
-        d2.metric("FICO below 620", f"{int(risk_drivers.get('subprime_count', 0) or 0):,}",
-                  help="Transactions linked to a subprime customer profile.")
-        d3.metric("Both signals", f"{int(risk_drivers.get('dual_factor_count', 0) or 0):,}",
-                  help="Dual-factor cases; these form the Critical Risk queue.")
-        d4.metric("Velocity signals", f"{int(risk_drivers.get('velocity_signal_count', 0) or 0):,}",
-                  help="More than three transactions for the same card within one micro-batch. Context for investigation.")
+        with st.expander("Risk classification rules and recommended analyst response"):
+            st.markdown(
+                "- **High Risk** — CUR is above 85%. Review available credit and recent spending.\n"
+                "- **Critical Risk** — CUR is above 85% and FICO is below 620. Investigate the customer, merchant, and transaction context first.\n"
+                "- **High velocity** — more than three transactions for one card in a micro-batch. Use it as an investigation clue; it does not classify a transaction by itself.\n"
+                "- **Subprime profile** — FICO below 620. It raises context, but does not imply fraud or a decision on its own."
+            )
 
         st.divider()
 
         col_l, col_r = st.columns([1, 1.45])
 
         with col_l:
-            _label("Risk Segment Distribution")
-            st.caption("Shows where the portfolio sits in the decision rules. A growing High/Critical share means the review workload is increasing.")
+            _label("Portfolio Mix by Risk Level")
+            st.caption("Read from top to bottom: Critical and High are work queues; Subprime is context; Normal is the unaffected remainder.")
             if risk_data:
                 risk_df = pd.DataFrame(risk_data)
-                fig = px.pie(
-                    risk_df, names="risk_label", values="count",
+                severity_order = {
+                    "CRITICAL_RISK": 0,
+                    "HIGH_RISK": 1,
+                    "SUBPRIME_RISK": 2,
+                    "NORMAL": 3,
+                }
+                risk_df["_order"] = risk_df["risk_label"].map(severity_order).fillna(99)
+                risk_df = risk_df.sort_values("_order")
+                fig = px.bar(
+                    risk_df, x="count", y="risk_label", orientation="h",
                     color="risk_label",
                     color_discrete_map=RISK_COLORS,
-                    hole=0.58,
+                    text="count",
                 )
                 fig.update_traces(
-                    textinfo="percent+label",
+                    texttemplate="%{text:,}",
+                    textposition="outside",
                     textfont_size=11,
-                    hovertemplate="<b>%{label}</b><br>%{value:,} transactions  (%{percent})<extra></extra>",
+                    hovertemplate="<b>%{y}</b><br>%{x:,} transactions<extra></extra>",
                 )
-                fig.update_layout(**_layout(height=290, showlegend=False))
+                fig.update_layout(**_layout(height=250, showlegend=False))
+                fig.update_yaxes(title=None, categoryorder="array", categoryarray=list(severity_order))
+                fig.update_xaxes(title="Transactions")
                 st.plotly_chart(fig, width="stretch")
 
                 # Summary table
@@ -415,7 +431,7 @@ with tab_biz:
                 tbl = tbl[["risk_label", "count", "Share", "Volume"]].rename(
                     columns={"risk_label": "Segment", "count": "Transactions"}
                 )
-                st.dataframe(tbl, width="stretch", hide_index=True, height=175)
+                st.dataframe(tbl, width="stretch", hide_index=True, height=160)
 
         with col_r:
             _label("Daily Transaction Volume & Risk Count")
