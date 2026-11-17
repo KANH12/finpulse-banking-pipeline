@@ -170,7 +170,7 @@ with tab_de:
                 )
                 fig.update_traces(textposition="outside", textfont_size=10, showlegend=False)
                 fig.update_layout(**_layout(height=260, xaxis_title="Records", yaxis_title=""))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             else:
                 st.caption("No quarantine records — DQ gate is clean.")
 
@@ -190,7 +190,7 @@ with tab_de:
                     showarrow=False, font_size=16, align="center",
                 )
                 fig2.update_layout(**_layout(height=260, showlegend=True))
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width="stretch")
 
         st.divider()
 
@@ -262,7 +262,7 @@ with tab_de:
 
             st.dataframe(
                 q_df,
-                use_container_width=True,
+                width="stretch",
                 height=400,
                 column_config={
                     "error_code": st.column_config.TextColumn(
@@ -349,7 +349,7 @@ with tab_biz:
                     hovertemplate="<b>%{label}</b><br>%{value:,} transactions  (%{percent})<extra></extra>",
                 )
                 fig.update_layout(**_layout(height=290, showlegend=False))
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
                 # Summary table
                 tbl = risk_df[["risk_label", "count", "total_amount"]].copy()
@@ -358,7 +358,7 @@ with tab_biz:
                 tbl = tbl[["risk_label", "count", "Share", "Volume"]].rename(
                     columns={"risk_label": "Segment", "count": "Transactions"}
                 )
-                st.dataframe(tbl, use_container_width=True, hide_index=True, height=175)
+                st.dataframe(tbl, width="stretch", hide_index=True, height=175)
 
         with col_r:
             _label("Daily Transaction Volume & Risk Count")
@@ -391,7 +391,7 @@ with tab_biz:
                         zeroline=False,
                     )
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             else:
                 st.caption("No Gold data yet.")
 
@@ -423,7 +423,7 @@ with tab_biz:
                     **_layout(height=380),
                     coloraxis_colorbar=dict(title="Avg CUR", len=0.55, thickness=10),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
         with col_m2:
             _label("High Risk — Recent Transactions")
@@ -443,7 +443,7 @@ with tab_biz:
 
                 st.dataframe(
                     hr_df[show],
-                    use_container_width=True,
+                    width="stretch",
                     height=380,
                     column_config={
                         "transaction_timestamp": st.column_config.TextColumn("Timestamp", width="medium"),
