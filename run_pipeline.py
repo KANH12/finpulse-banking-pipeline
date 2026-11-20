@@ -31,7 +31,7 @@ def main():
     print(f"-> DQ Gate result: {res_pipeline}")
 
     # Step 3: Run analytics (Lambda 3).
-    print("\n[STEP 3] Analytics: build star schema -> write Gold...")
+    print("\n[STEP 3] Analytics: materialise Gold fact and dimensions...")
     res_analytics = analytics_handler({}, None)
     print(f"-> Analytics Gold result: {res_analytics}")
 
