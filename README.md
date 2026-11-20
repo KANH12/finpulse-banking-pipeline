@@ -116,13 +116,14 @@ The project uses the synthetic IBM Credit Card Transactions dataset published on
 
 ## Dashboard
 
-### Risk review dashboard
-
-![Risk dashboard](assets/pipeline-health.png)
-
 ### Pipeline health and quarantine
 
-![Pipeline health dashboard](assets/risk-dashboard.png)
+![Pipeline health dashboard](assets/pipeline-health.png)
+
+### Risk review dashboard
+
+![Risk dashboard](assets/risk-dashboard.png)
+
 
 The Streamlit dashboard has two views:
 
