@@ -350,7 +350,7 @@ with tab_biz:
                 {
                     "Signal": "High credit utilization (CUR)",
                     "Rule": "CUR > 85%",
-                    "What it reflects": "The card's estimated outstanding balance is close to its credit limit.",
+                    "What it reflects": "The card's monthly accepted-spend proxy is close to its credit limit.",
                     "Analyst action": "Review spending pattern and available credit before approving follow-up activity.",
                 },
                 {
@@ -362,7 +362,7 @@ with tab_biz:
                 {
                     "Signal": "Critical risk",
                     "Rule": "CUR > 85% AND FICO < 620",
-                    "What it reflects": "Two independent indicators occur together, creating the highest review priority.",
+                    "What it reflects": "Two complementary review signals occur together, creating the highest review priority.",
                     "Analyst action": "Investigate first; validate customer, merchant, and transaction context.",
                 },
                 {
